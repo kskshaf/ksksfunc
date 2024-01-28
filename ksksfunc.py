@@ -119,7 +119,7 @@ def Deband(denoised,nrmask,range1=6,range2=10,y1=48,c1=36,r1=36,y2=36,c2=24,r2=2
 #DebandMask(LoliHouse)
 def DBMask(clip):
     nr8=mvf.Depth(clip,8)
-    luma   = core.std.ShufflePlanes(nr8, 0, vs.YUV).resize.Bilinear(format=vs.YUV420P8)
+    #luma   = core.std.ShufflePlanes(nr8, 0, vs.YUV).resize.Bilinear(format=vs.YUV420P8)
     nrmasks = core.tcanny.TCanny(nr8,sigma=0.8,op=2,gmmax=255,mode=1,planes=[0,1,2]).std.Expr(["x 7 < 0 65535 ?",""],vs.YUV420P16)
     nrmaskb = core.tcanny.TCanny(nr8,sigma=1.3,t_h=6.5,op=2,planes=0)
     nrmaskg = core.tcanny.TCanny(nr8,sigma=1.1,t_h=5.0,op=2,planes=0)
@@ -150,6 +150,7 @@ def ContraDering(clip,ecstrength=15,ecrmode=18,conn=[1,2,1,2,4,2,1,2,1],mrad=1.0
     cp=haf.ContraSharpening(dr,clip,csrange)
     rp=core.rgvs.Repair(dr,cp,rpmode)
     return rp
+
 ###Modifde of xyx98's rescalef.
 #Dering&AA after rescale
 #GRAY output
@@ -253,7 +254,7 @@ def rescalef_aa(src: vs.VideoNode,kernel: str,w=None,h=None,bh=None,bw=None,mask
 #20221030
 #MRcoref(rescalef) of xvs.
 #Only GRAY input and output.
-def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Union[bool,vs.VideoNode]=True,mask_dif_pix:float=2,postfilter_descaled=None,mthr:list[int]=[2,2],taps:int=3,b:float=0,c:float=0.5,multiple:float=1,maskpp=None,show:str="result",blur_mask=False,ds_aa=False,aatype=1,aarepair=-20,sharp=-0.5,mtype=3,postaa=True,stablize=2,aacycle=0,thin=0,dark=0.15,aamask=0,dehalo=False,dering=False,thlimi=60,thlima=150,brightstr=0.4,darkstr=0,drthr=2,**args):
+def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Union[bool,vs.VideoNode]=True,mask_dif_pix:float=2,postfilter_descaled=None,mthr:list[int]=[2,2],taps:int=3,b:float=0,c:float=0.5,multiple:float=1,maskpp=None,show:str="result",blur_mask=False,aa_m=False,aatype=1,aarepair=-20,sharp=-0.5,mtype=3,postaa=True,stablize=2,aacycle=0,thin=0,dark=0.15,aamask=0,aalimit=[1.0,10],dehalo=False,dering=False,thlimi=60,thlima=150,brightstr=0.4,darkstr=0,drthr=2,**args):
     if clip.format.color_family != vs.GRAY or clip.format.bits_per_sample != 16:
         raise ValueError("input clip should be GRAY16!")
 
@@ -307,19 +308,16 @@ def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Uni
     exp=args.get("exp")
     sigmoid=args.get("sigmoid")
 
-    if ds_aa:
-        descaled_aa=taa.TAAmbk(descaled.fmtc.bitdepth(bits=16),aatype=aatype,aarepair=aarepair,sharp=sharp,mtype=mtype,postaa=postaa,stablize=stablize,cycle=aacycle,thin=thin,dark=dark,showmask=aamask) #TAA
+    # AA After Descale
+    if aa_m==1:
+        descaled=descaled.fmtc.bitdepth(bits=16)
+        descaled_aa=taa.TAAmbk(descaled,aatype=aatype,aarepair=aarepair,sharp=sharp,mtype=mtype,postaa=postaa,stablize=stablize,cycle=aacycle,thin=thin,dark=dark,showmask=aamask) #TAA
+        descaled_aa=mvf.LimitFilter(descaled_aa,descaled,thr=aalimit[0],elast=aalimit[1])
         rescale=nnrs.nnedi3_resample(descaled_aa,nsize=nsize,nns=nns,qual=qual,etype=etype,pscrn=pscrn,exp=exp,sigmoid=sigmoid,mode="znedi3",**cargs.nnrs_gen())
     else:
         rescale=nnrs.nnedi3_resample(descaled,nsize=nsize,nns=nns,qual=qual,etype=etype,pscrn=pscrn,exp=exp,sigmoid=sigmoid,mode="znedi3",**cargs.nnrs_gen()).fmtc.bitdepth(bits=16)
-        
-    if dehalo:
-        rescale=haf.FineDehalo(rescale,thlimi=thlimi,thlima=thlima,brightstr=brightstr,darkstr=darkstr)
 
-    if dering:
-        rescale=muf.mdering(rescale,thr=drthr)
-
-#rescale=nnrs.nnedi3_resample(descaled_aa,nsize=nsize,nns=nns,qual=qual,etype=etype,pscrn=pscrn,exp=exp,sigmoid=sigmoid,mode="znedi3",**cargs.nnrs_gen()).fmtc.bitdepth(bits=16)
+    #rescale=nnrs.nnedi3_resample(descaled_aa,nsize=nsize,nns=nns,qual=qual,etype=etype,pscrn=pscrn,exp=exp,sigmoid=sigmoid,mode="znedi3",**cargs.nnrs_gen()).fmtc.bitdepth(bits=16)
 
     if mask is True:
         mask=core.std.Expr([clip,upscaled.fmtc.bitdepth(bits=16,dmode=1)],"x y - abs").std.Binarize(mask_dif_pix*256)
@@ -328,17 +326,41 @@ def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Uni
         else:
             mask=xvs.expand(mask,cycle=mthr[0])
             mask=xvs.inpand(mask,cycle=mthr[1])
-    if blur_mask is True:
-        mask=mask.rgvs.RemoveGrain(20)
-
-        rescale=core.std.MaskedMerge(rescale,clip,mask)
     elif isinstance(mask,vs.VideoNode):
         if mask.width!=src_w or mask.height!=src_h or mask.format.color_family!=vs.GRAY:
             raise ValueError("mask should have same resolution as source,and should be GRAY")
         mask=core.fmtc.bitdepth(mask,bits=16,dmode=1)
-        rescale=core.std.MaskedMerge(rescale,clip,mask)
     else:
         mask=core.std.BlankClip(rescale)
+
+    if blur_mask is True:
+            mask=mask.rgvs.RemoveGrain(20)
+
+    # Dehalo select
+    if dehalo==1:
+        rescale=haf.FineDehalo(rescale,thlimi=thlimi,thlima=thlima,brightstr=brightstr,darkstr=darkstr)
+        rescale=core.std.MaskedMerge(rescale,clip,mask)
+    elif dehalo==2:
+        rescale=core.std.MaskedMerge(rescale,clip,mask)
+        rescale=haf.FineDehalo(rescale,thlimi=thlimi,thlima=thlima,brightstr=brightstr,darkstr=darkstr)
+    else:
+        rescale=core.std.MaskedMerge(rescale,clip,mask)
+
+    # Dering select
+    if dering==1:
+        rescale=muf.mdering(rescale,thr=drthr)
+        rescale=core.std.MaskedMerge(rescale,clip,mask)
+    elif dering==2:
+        rescale=core.std.MaskedMerge(rescale,clip,mask)
+        rescale=muf.mdering(rescale,thr=drthr)
+    else:
+        rescale=core.std.MaskedMerge(rescale,clip,mask)
+
+    # AA After Rescale
+    if aa_m==2:
+        rescale_o=rescale
+        rescale=taa.TAAmbk(rescale,aatype=aatype,aarepair=aarepair,sharp=sharp,mtype=mtype,postaa=postaa,stablize=stablize,cycle=aacycle,thin=thin,dark=dark,showmask=aamask)
+        rescale=mvf.LimitFilter(rescale,rescale_o,thr=aalimit[0],elast=aalimit[1])
 
     if show.lower()=="result":
         return rescale
@@ -346,5 +368,5 @@ def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Uni
         return mask
     elif show.lower()=="descale":
         return descaled #after postfilter_descaled
-#20230208
+#20230815
 
