@@ -1,5 +1,5 @@
-from vapoursynth import core
 import vapoursynth as vs
+core = vs.core
 import re,math,functools,sys,os
 import mvsfunc as mvf
 import havsfunc as haf
