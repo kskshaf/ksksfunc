@@ -8,44 +8,24 @@ import vsTAAmbk as taa
 import xvs
 import muvsfunc as muf
 from typing import Optional, Union
-#GetY
+
+# GetY
 def Y(clip):
 	return core.std.ShufflePlanes(clip,0,vs.GRAY)
-#GetU
+# GetU
 def U(clip):
 	return core.std.ShufflePlanes(clip,1,vs.GRAY)
-#GetV
+# GetV
 def V(clip):
 	return core.std.ShufflePlanes(clip,2,vs.GRAY)
-#GetPlane
+# GetPlane
 def GetPlane(clip,n):
 	return core.std.ShufflePlanes(clip,n,vs.GRAY)
 ###
 GP=GetPlane
-##BM3D_YUV444P16
-def BM3D_444(clip,sigma,radius1,block_step,bm_range,ps_num,ps_range,rclip=None):
-	src_opp = mvf.ToRGB(clip).bm3d.RGB2OPP(1)
 
-	if rclip is None:
-		rclip = src_opp
-	else:
-		rclip = mvf.ToRGB(rclip).bm3d.RGB2OPP(1)
-
-	cpu = core.bm3dcpu.BM3Dv2(src_opp, rclip, sigma=sigma, block_step=block_step, bm_range=bm_range, radius=radius1, ps_num=ps_num, ps_range=ps_range, chroma=True)
-	bm3d_f = mvf.ToYUV(core.bm3d.OPP2RGB(cpu,1),css=444,depth=16)
-	return bm3d_f
-##BM3D_YUV420P16
-def BM3DCPU(clip,sigma,radius1,block_step,bm_range,ps_num,ps_range,rclip=None,outdepth=16):
-	clip=clip.fmtc.bitdepth(bits=32)
-	if rclip is None:
-		rclip = clip
-	else:
-		rclip = mvf.Depth(rclip,32)
-
-	bm3d = core.bm3dcpu.BM3Dv2(clip, rclip, sigma=sigma, block_step=block_step, bm_range=bm_range, radius=radius1, ps_num=ps_num, ps_range=ps_range, chroma=False).fmtc.bitdepth(bits=outdepth)
-	return bm3d
-##CropPart
-##用以裁剪出一处矩形区域
+# CropPart
+# a stupip crop function, use "https://github.com/OpusGang/rekt" for better experience
 def CropPart(src,src_crop,l=0,t=0,r=0,b=0):
 	w=src.width
 	h=src.height
@@ -57,10 +37,13 @@ def CropPart(src,src_crop,l=0,t=0,r=0,b=0):
 	top_mid_bottom = core.std.StackVertical([top,part,bottom])
 	right_last = core.std.StackHorizontal([left,top_mid_bottom,right])
 	return right_last
-##Adaptive Denoise Mask
-##亮度自适应降噪（使用指数函数）
-#x1,x2 for light strength
-#y1,y2 for denoise (mask)strength
+
+'''
+    Adaptive Denoise Mask
+    an useless function, use core.adg.Mask() for better experience
+    x1,x2 for light strength
+    y1,y2 for denoise (mask)strength
+'''
 def Adaptive_DenoiseMask(clip,x1,y1,x2,y2):
     if not isinstance(clip, vs.VideoNode):
         raise vs.Error('You must input a "clip"!')
@@ -87,39 +70,22 @@ def Adaptive_DenoiseMask(clip,x1,y1,x2,y2):
         b_expr=b2
         clip=core.std.Expr(clip,f'x {x1} > {y1} x {x2} < {y2} x 2 pow {a_expr} * {b_expr} + ? ?')
     return clip
-##Adaptive Denoise
-### br:MinBlur range ; rgm:The mode of "rgvs.RemoveGrain()"
-def Adaptive_Denoise(input,sigma,radius1,block_step,bm_range,ps_num,ps_range,x1=52428,y1=65535,x2=32678,y2=1200,blur=True,br=1,rgm=20,showmask=False):
-	get_y = Y(input)
 
-	if blur:
-		blur = haf.MinBlur(get_y,br).rgvs.RemoveGrain(rgm)
-	else:
-		blur = get_y
+# 20220927
 
-	bm3d_a = BM3DCPU(input,sigma=sigma,radius1=radius1,block_step=block_step,bm_range=bm_range,ps_num=ps_num,ps_range=ps_range)
-	mask_w = Adaptive_DenoiseMask(blur,x1=x1,y1=y1,x2=x2,y2=y2)
-	denoised = core.std.MaskedMerge(input,bm3d_a,mask_w)
-	if showmask:
-		output = mask_w
-	else:
-		output = denoised
-	return output
-###
-ADN = Adaptive_Denoise
-ADNM = Adaptive_DenoiseMask
-#20220927
-#NormalDeband
+# NormalDeband(from LoliHouse: https://share.dmhy.org/topics/view/478666_LoliHouse_LoliHouse_1st_Anniversary_Announcement_and_Gift.html)
+# use zvs.xdbcas() for better experience
 def Deband(denoised,nrmask,range1=6,range2=10,y1=48,c1=36,r1=36,y2=36,c2=24,r2=24,thr=0.6,thrc=0.5,elast=2.0,first_plane=True):
     deband=core.f3kdb.Deband(denoised,range1,y1,c1,r1,0,0)
     deband=core.f3kdb.Deband(deband,range2,y2,c2,r2,0,0)
     deband=mvf.LimitFilter(deband,denoised,thr=thr,thrc=thrc,elast=elast)
     deband=core.std.MaskedMerge(deband,denoised,nrmask,first_plane)
     return deband
-#DebandMask(LoliHouse)
+
+
+## DebandMask(from LoliHouse: https://share.dmhy.org/topics/view/478666_LoliHouse_LoliHouse_1st_Anniversary_Announcement_and_Gift.html)
 def DBMask(clip):
     nr8=mvf.Depth(clip,8)
-    #luma   = core.std.ShufflePlanes(nr8, 0, vs.YUV).resize.Bilinear(format=vs.YUV420P8)
     nrmasks = core.tcanny.TCanny(nr8,sigma=0.8,op=2,gmmax=255,mode=1,planes=[0,1,2]).std.Expr(["x 7 < 0 65535 ?",""],vs.YUV420P16)
     nrmaskb = core.tcanny.TCanny(nr8,sigma=1.3,t_h=6.5,op=2,planes=0)
     nrmaskg = core.tcanny.TCanny(nr8,sigma=1.1,t_h=5.0,op=2,planes=0)
@@ -127,7 +93,8 @@ def DBMask(clip):
     nrmask  = core.std.Maximum(nrmask,0).std.Maximum(0).std.Minimum(0)
     nrmask  = core.rgvs.RemoveGrain(nrmask,[20,0])
     return nrmask
-#AdaptiveSharp(TCanny&MinBlur)
+
+# AdaptiveSharpen (use TCanny & MinBlur)
 def Sharp(src_nos,sigma=1,t_h=12,t_l=2.5,mode=1,op=1,br=1,rmode=0,thr=0.6,thrc=0.5,elast=10,showmask=False):
     get_y=Y(src_nos)
     edge=core.tcanny.TCanny(get_y,sigma=sigma,t_h=t_h,t_l=t_l,mode=mode,op=op).std.Maximum().std.Minimum().std.Maximum()
@@ -140,9 +107,9 @@ def Sharp(src_nos,sigma=1,t_h=12,t_l=2.5,mode=1,op=1,br=1,rmode=0,thr=0.6,thrc=0
     else:
         sharp_out=sharp
     return sharp_out
-#20221016
+# 20221016
 
-#Dering(https://www.skyey2.com/forum.php?mod=viewthread&tid=32112&extra=page%3D1)
+# Deringing (from https://www.skyey2.com/forum.php?mod=viewthread&tid=32112)
 def ContraDering(clip,ecstrength=15,ecrmode=18,conn=[1,2,1,2,4,2,1,2,1],mrad=1.0,mthr=115,csrange=1.0,rpmode=23):
     dr=haf.EdgeCleaner(clip,strength=ecstrength,rmode=ecrmode).std.Convolution(conn)
     mask_r=haf.HQDeringmod(clip,show=True,mrad=mrad,mthr=mthr)
@@ -151,9 +118,11 @@ def ContraDering(clip,ecstrength=15,ecrmode=18,conn=[1,2,1,2,4,2,1,2,1],mrad=1.0
     rp=core.rgvs.Repair(dr,cp,rpmode)
     return rp
 
-###Modifde of xyx98's rescalef.
-#Dering&AA after rescale
-#GRAY output
+'''
+    Modifde of xyx98's rescalef.
+    Dering&AA after rescale
+    output format: vs.GRAY(
+'''
 def rescalef_aa(src: vs.VideoNode,kernel: str,w=None,h=None,bh=None,bw=None,mask=True,mask_dif_pix=2,show="result",rsmode="znedi3",dering=False,ecstrength=15,ecrmode=18,conn=[1,2,1,2,4,2,1,2,1],mrad=1.0,mthr=115,csrange=1.0,rpmode=23,not_aa=True,aatype=1,aarepair=-20,sharp=-0.5,mtype=3,postaa=True,stablize=2,aacycle=1,thin=0,dark=0.15,aamask=0,postfilter_descaled=None,selective=False,upper=0.0001,lower=0.00001,**args):
     #for decimal resolution descale,refer to GetFnative
     if src.format.color_family is not vs.GRAY:
@@ -176,11 +145,11 @@ def rescalef_aa(src: vs.VideoNode,kernel: str,w=None,h=None,bh=None,bw=None,mask
     kernel=kernel.strip().capitalize()
     if kernel not in ["Debilinear","Debicubic","Delanczos","Despline16","Despline36","Despline64"]:
         raise ValueError("unsupport kernel")
-    ####
+
     src=mvf.Depth(src,16)
     luma=src
     cargs=xvs.cropping_args(src.width,src.height,h,bh,bw)
-    ####
+
     if kernel in ["Debilinear","Despline16","Despline36","Despline64"]:
         luma_de=eval("core.descale.{k}(luma.fmtc.bitdepth(bits=32),**cargs.descale_gen())".format(k=kernel))
         luma_up=eval("core.resize.{k}(luma_de,**cargs.resize_gen())".format(k=kernel[2:].capitalize()))
@@ -251,9 +220,13 @@ def rescalef_aa(src: vs.VideoNode,kernel: str,w=None,h=None,bh=None,bw=None,mask
         return core.text.FrameProps(luma_rescale,"diff", scale=2)
     else:
         return luma_rsdr_aa
-#20221030
-#MRcoref(rescalef) of xvs.
-#Only GRAY input and output.
+
+# 20221030
+
+'''
+    MRcoref(rescalef) of xvs.
+    vs.GRAY input and output.
+'''
 def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Union[bool,vs.VideoNode]=True,mask_dif_pix:float=2,postfilter_descaled=None,mthr:list[int]=[2,2],taps:int=3,b:float=0,c:float=0.5,multiple:float=1,maskpp=None,show:str="result",blur_mask=False,aa_m=False,aatype=1,aarepair=-20,sharp=-0.5,mtype=3,postaa=True,stablize=2,aacycle=0,thin=0,dark=0.15,aamask=0,aalimit=[1.0,10],dehalo=False,dering=False,thlimi=60,thlima=150,brightstr=0.4,darkstr=0,drthr=2,**args):
     if clip.format.color_family != vs.GRAY or clip.format.bits_per_sample != 16:
         raise ValueError("input clip should be GRAY16!")
@@ -368,5 +341,5 @@ def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Uni
         return mask
     elif show.lower()=="descale":
         return descaled #after postfilter_descaled
-#20230815
+# 20230815
 
