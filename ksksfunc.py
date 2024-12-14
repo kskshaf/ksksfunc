@@ -40,7 +40,7 @@ def CropPart(src,src_crop,l=0,t=0,r=0,b=0):
 
 '''
     Adaptive Denoise Mask
-    an useless function, use core.adg.Mask() for better experience
+    a useless function, use core.adg.Mask() for better experience
     x1,x2 for light strength
     y1,y2 for denoise (mask)strength
 '''
