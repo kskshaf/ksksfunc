@@ -319,15 +319,16 @@ def MRcoref(clip:vs.VideoNode,kernel:str,w=None,h=None,bh=None,bw=None,mask: Uni
     else:
         rescale=core.std.MaskedMerge(rescale,clip,mask)
 
+    rescale_dehaloed = rescale
     # Dering select
     if dering==1:
         rescale=muf.mdering(rescale,thr=drthr)
-        rescale=core.std.MaskedMerge(rescale,clip,mask)
+        rescale=core.std.MaskedMerge(rescale, rescale_dehaloed, mask)
     elif dering==2:
-        rescale=core.std.MaskedMerge(rescale,clip,mask)
+        #rescale=core.std.MaskedMerge(rescale, rescale_dehaloed, mask)
         rescale=muf.mdering(rescale,thr=drthr)
     else:
-        rescale=core.std.MaskedMerge(rescale,clip,mask)
+        pass
 
     # AA After Rescale
     if aa_m==2:
